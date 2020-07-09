@@ -1,0 +1,85 @@
+/*READ A JSON FILE THAT IS LOADED INTO A CLOB
+WRITTEN IN ORACLE*/
+
+create table json_test
+(
+id varchar2 (32) NOT NULL PRIMARY KEY,
+DATE_LOADED TIMESTAMP,
+json_object1 clob
+CONSTRAINT ENSURE_JSON CHECK (json_object1 is json)
+);
+
+
+select *
+from json_test;
+
+
+
+--The json objects would be stored, in the column json_object1. You can then select the parts of the json in the column
+--, by defining the path of the data you want. If there is a json array, within the json record you can either display the array or break that out as well.
+
+
+SELECT jt.requestor, jt.phones, jt.reference, partial, has_zip
+  FROM json_test,
+       json_table(json_object1, '$'
+         COLUMNS (requestor VARCHAR2(32 CHAR) PATH '$.Requestor',
+                  reference varchar2(100 char) PATH '$.Reference',
+                  phones    VARCHAR2(100 CHAR) FORMAT JSON
+                            PATH '$.ShippingInstructions.Phone',
+                  partial   NUMBER(1) PATH '$.AllowPartialShipment',
+                  has_zip   VARCHAR2(5 CHAR) EXISTS
+                            PATH '$.ShippingInstructions.Address.zipCode')) jt;
+
+
+
+--The Phones, column is a json array, so we could either store it like that in another table or continue to break it out in one process.
+
+
+SELECT jt.requestor, jt.reference, partial, has_zip
+,case when jt_phones.phone_type = 'Office' then jt_phones.phone_num else NULL end office_phone
+,case when jt_phones.phone_type = 'Mobile' then jt_phones.phone_num else NULL end mobile_phone
+,jt_phones.phone_num
+,jt.phones
+  FROM json_test,
+       json_table(json_object1, '$'
+         COLUMNS (requestor VARCHAR2(32 CHAR) PATH '$.Requestor',
+                  reference varchar2(100 char) PATH '$.Reference',
+                  phones    VARCHAR2(100 CHAR) FORMAT JSON
+                            PATH '$.ShippingInstructions.Phone',
+                  partial   NUMBER(1) PATH '$.AllowPartialShipment',
+                  has_zip   VARCHAR2(5 CHAR) EXISTS
+                            PATH '$.ShippingInstructions.Address.zipCode')) jt,
+        json_table(json_object1, '$.ShippingInstructions.Phone[*]'
+         COLUMNS (phone_type VARCHAR2(10) PATH '$.type',
+                  phone_num  VARCHAR2(20) PATH '$.number')) jt_phones;
+
+
+
+--Breaking the phone array out, will add rows, based on the number of phone numbers in the array. 
+--You can easily solve that by adding a case statement followed by a group by.
+
+
+select  requestor, reference
+,max(office_phone) office_phone
+,max(mobile_phone) mobile_phone
+from
+(SELECT jt.requestor, jt.reference, partial, has_zip
+,case when jt_phones.phone_type = 'Office' then jt_phones.phone_num else NULL end office_phone
+,case when jt_phones.phone_type = 'Mobile' then jt_phones.phone_num else NULL end mobile_phone
+,jt_phones.phone_num
+,jt.phones
+  FROM json_test,
+       json_table(json_object1, '$'
+         COLUMNS (requestor VARCHAR2(32 CHAR) PATH '$.Requestor',
+                  reference varchar2(100 char) PATH '$.Reference',
+                  phones    VARCHAR2(100 CHAR) FORMAT JSON
+                            PATH '$.ShippingInstructions.Phone',
+                  partial   NUMBER(1) PATH '$.AllowPartialShipment',
+                  has_zip   VARCHAR2(5 CHAR) EXISTS
+                            PATH '$.ShippingInstructions.Address.zipCode')) jt,
+        json_table(json_object1, '$.ShippingInstructions.Phone[*]'
+         COLUMNS (phone_type VARCHAR2(10) PATH '$.type',
+                  phone_num  VARCHAR2(20) PATH '$.number')) jt_phones)
+group by  requestor, reference;
+
+
