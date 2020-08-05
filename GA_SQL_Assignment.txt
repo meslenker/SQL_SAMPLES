@@ -1,0 +1,70 @@
+--Step 1 - Analyze table count and columns in table
+SELECT *
+FROM listings
+WHERE UPPER(neighbourhood) NOT IN ('CENTRUM-WEST','CENTRUM-OOST')
+AND room_type = 'Entire home/apt'
+LIMIT 100;
+
+SELECT COUNT(*)
+FROM listings
+WHERE UPPER(neighbourhood) NOT IN ('CENTRUM-WEST','CENTRUM-OOST')
+AND room_type = 'Entire home/apt'
+LIMIT 100;
+
+--RESULTS: 12,600
+
+--Step 2 - Find monthly income for each listing in Amsterdam (Uses Airbnb Occupancy Model and some assumptions)
+SELECT id, neighbourhood
+,(DAYS_PER_MONTH * PRICE1) + CLEANING_FEE1 MONTHLY_INCOME
+FROM
+(SELECT id
+,neighbourhood
+,BOOKINGS_PER_MONTH * AVERAGE_LENGTH_OF_STAY DAYS_PER_MONTH
+,PRICE1
+,CLEANING_FEE1
+FROM
+(SELECT 
+id
+,neighbourhood
+,reviews_per_month * .50 BOOKINGS_PER_MONTH
+,CASE 
+ WHEN minimum_nights < 3.9 THEN 3.9 --ANYTHING LESS THAN THE AVERAGE LENGTH OF STAY IN AMSTERDAM SET IT TO THE AVERAGE
+ ELSE minimum_nights
+ END AVERAGE_LENGTH_OF_STAY
+ ,PRICE + extra_people PRICE1
+ ,COALESCE(cleaning_fee,0) CLEANING_FEE1
+FROM listings
+WHERE UPPER(neighbourhood) NOT IN ('CENTRUM-WEST','CENTRUM-OOST')
+AND room_type = 'Entire home/apt'
+AND city = 'Amsterdam')A)B
+LIMIT 100;
+
+--Step 3 - Add review data 
+SELECT b.id, neighbourhood
+,(DAYS_PER_MONTH * PRICE1) + CLEANING_FEE1 MONTHLY_INCOME
+,c.number_of_reviews
+,c.review_scores_rating
+FROM
+(SELECT id
+,neighbourhood
+,BOOKINGS_PER_MONTH * AVERAGE_LENGTH_OF_STAY DAYS_PER_MONTH
+,PRICE1
+,CLEANING_FEE1
+FROM
+(SELECT 
+id
+,neighbourhood
+,coalesce(reviews_per_month,1) * .50 BOOKINGS_PER_MONTH
+,CASE 
+ WHEN coalesce(minimum_nights,0) < 3.9 THEN 3.9 --ANYTHING LESS THAN THE AVERAGE LENGTH OF STAY IN AMSTERDAM SET IT TO THE AVERAGE
+ ELSE minimum_nights
+ END AVERAGE_LENGTH_OF_STAY
+ ,PRICE + coalesce(extra_people,0) PRICE1
+ ,COALESCE(cleaning_fee,0) CLEANING_FEE1
+FROM listings
+WHERE UPPER(neighbourhood) NOT IN ('CENTRUM-WEST','CENTRUM-OOST')
+AND room_type = 'Entire home/apt'
+AND city = 'Amsterdam')A)B
+left join ratings C 
+on b.id = c.id;
+LIMIT 100;
